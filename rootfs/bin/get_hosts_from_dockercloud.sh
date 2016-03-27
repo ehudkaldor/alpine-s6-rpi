@@ -1,57 +1,43 @@
-parseServiceLinks() {
-  while read service_uri
+parseContainers () {
+  while read container_uri
   do
-    CONTAINERS=$(curl -s -H "Authorization: $DOCKERCLOUD_AUTH" -H "Accept: application/json" ${DOCKERCLOUD_REST_HOST}${service_uri} | jq -r ".containers[]")
-    echo "container URIs: $CONTAINERS"
-    for CONT_URI in $CONTAINERS
-    do
-      ANS=$(curl -s -H "Authorization: $DOCKERCLOUD_AUTH" -H "Accept: application/json" ${DOCKERCLOUD_REST_HOST}${CONT_URI})
-      export LINE
-      if [[ -n $(echo $ANS | jq -r '.domainname') && $(echo $ANS | jq -r '.domainname') != 'null' ]]
-      then 
-        LINE=$(echo $ANS | jq -r '. | "\(.private_ip) \(.hostname) \(.hostname).\(.domainname)"')
-      else
-        LINE=$(echo $ANS | jq -r '. | "\(.private_ip) \(.hostname)"') 
-      fi
-      if [[ $(echo $ANS | jq -r '.hostname') != $(echo $ANS | jq -r '.name') ]]
-      then
-        LINE="$LINE $(echo $ANS | jq -r '.name')"
-      fi
-      echo $LINE >> /tmp/hosts
-    done
+#    echo "container uri: $container_uri"
+    details=$(curl -s -H "Authorization: $DOCKERCLOUD_AUTH" -H "Accept: application/json" ${DOCKERCLOUD_REST_HOST}${container_uri})
+    hostname=$(echo $details | jq -r '.hostname')
+    domainname=$(echo $details | jq -r '.domainname')
+    private_ip=$(echo $details | jq -r '.private_ip')
+    name=$(echo $details | jq -r '.name')
+    line="$private_ip $hostname"
+#    if [ -n $domainname && $domainname -nq "null"]
+#    then
+      line="$line.$domainname $hostname"
+#    fi
+#    echo "line: $line"
+    echo $line >> /tmp/hosts
+#    curl -s -H "Authorization: $DOCKERCLOUD_AUTH" -H "Accept: application/json" ${DOCKERCLOUD_REST_HOST}${container_uri} | jq -r '@sh "\(.private_ip) \(.hostname) \(.hostname).\(.domainname) \(.name)" ' >> /tmp/hosts
   done
 }
 
-if [ -n "${DOCKERCLOUD_AUTH}" ] 
-then
-  STACKS=$(curl -s -H "Authorization: $DOCKERCLOUD_AUTH" -H "Accept: application/json" ${DOCKERCLOUD_REST_HOST}/api/app/v1/stack/ | jq -r '.objects[]')
-  export FOUND=false
-  for STACK in "${STACKS[@]}"
+parseServices () {
+  while read service_uri
   do
-    STACK_URI=$(echo $STACK | jq -r '.resource_uri')
-    if [ -n $(echo $STACK | jq -r '.services[] | select(. | contains ("${DOCKERCLOUD_SERVICE_API_URI}"))') ]
-    then
-      FOUND=true
-      echo $STACK | jq -r '.services[]' | parseServiceLinks
-    fi
+#    echo "service uri: $service_uri"
+    curl -s -H "Authorization: $DOCKERCLOUD_AUTH" -H "Accept: application/json" ${DOCKERCLOUD_REST_HOST}${service_uri} | jq -r '.containers[]' | tr -d '",' > /tmp/containers
+#    echo "containers: $(cat /tmp/containers)"
+    cat /tmp/containers | parseContainers
   done
-  if [ ! FOUND ]
-  then
-    echo "My service uri not found in any stack"
-  fi
+}
 
+# get my stack's URI
+stack_uri=$(curl -s -H "Authorization: $DOCKERCLOUD_AUTH" -H "Accept: application/json" ${DOCKERCLOUD_REST_HOST}${DOCKERCLOUD_SERVICE_API_URI} | jq -r '.stack')
 
+# empty previous /tmp/hosts
+echo > /tmp/hosts
 
-#  SERVICES=$(curl -s -H "Authorization: $DOCKERCLOUD_AUTH" -H "Accept: application/json" ${DOCKERCLOUD_REST_HOST}/api/app/v1/stack/ | jq -r ".objects[0] | .services[]")
-#  echo "services URIs: $SERVICES"
-#  for SRV_URI in $SERVICES
-#  do
-#    CONTAINERS=$(curl -s -H "Authorization: $DOCKERCLOUD_AUTH" -H "Accept: application/json" ${DOCKERCLOUD_REST_HOST}${SRV_URI} | jq -r ".containers[]")
-#    echo "container URIs: $CONTAINERS"
-#    for CONT_URI in $CONTAINERS
-#    do
-#      CONT_DETAILS=$(curl -s -H "Authorization: $DOCKERCLOUD_AUTH" -H "Accept: application/json" ${DOCKERCLOUD_REST_HOST}${CONT_URI} | jq -r ".hostname, .domainname, .private_ip, .name")
-#      echo "details: $CONT_DETAILS"
-#    done
-#  done
-fi
+# get my stack's details, and parse my brother services
+curl -s -H "Authorization: $DOCKERCLOUD_AUTH" -H "Accept: application/json" ${DOCKERCLOUD_REST_HOST}${stack_uri} | jq '.services[]' | tr -d '",' > /tmp/services
+
+#echo "services: $(cat /tmp/services)"
+
+cat /tmp/services | parseServices
+

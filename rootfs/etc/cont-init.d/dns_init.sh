@@ -29,7 +29,6 @@ echo
 
 if [ -n "$DOCKERCLOUD_CONTAINER_FQDN" ]
 then
-#    if [ -n "$TUTUM_API_CALLS_FOR_DNS" ] && [ -n "${DOCKERCLOUD_AUTH}" ]
     if [ -n "${DOCKERCLOUD_AUTH}" ]
     then
         echo "DNS STEP 2 : Requesting all containers and services from DockerCloud"
